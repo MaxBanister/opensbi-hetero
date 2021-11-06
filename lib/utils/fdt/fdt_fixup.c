@@ -21,8 +21,8 @@
 void fdt_cpu_fixup(void *fdt)
 {
 	struct sbi_domain *dom = sbi_domain_thishart_ptr();
-	int err, cpu_offset, cpus_offset, len;
-	const char *mmu_type;
+	int err, cpu_offset, cpus_offset, mmu_type_len, isa_len;
+	const char *mmu_type, *isa_string;
 	u32 hartid;
 
 	err = fdt_open_into(fdt, fdt, fdt_totalsize(fdt) + 32);
@@ -44,11 +44,14 @@ void fdt_cpu_fixup(void *fdt)
 		 * 2. MMU is not available for the HART
 		 */
 
-		mmu_type = fdt_getprop(fdt, cpu_offset, "mmu-type", &len);
+		mmu_type = fdt_getprop(fdt, cpu_offset, "mmu-type", &mmu_type_len);
+		isa_string = fdt_getprop(fdt, cpu_offset, "riscv,isa", &isa_len);
 		if (!sbi_domain_is_assigned_hart(dom, hartid) ||
-		    !mmu_type || !len)
+		    !mmu_type || !mmu_type_len || !isa_len ||
+			strlen(isa_string) < 4 || strchr(isa_string+4, 'v')) {
 			fdt_setprop_string(fdt, cpu_offset, "status",
 					   "disabled");
+		}
 	}
 }
 
