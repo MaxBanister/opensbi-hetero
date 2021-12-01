@@ -513,6 +513,7 @@ int sbi_hart_reinit(struct sbi_scratch *scratch)
 	if (rc)
 		return rc;
 
+	// TODO: don't delegate if V extension is enabled
 	rc = delegate_traps(scratch);
 	if (rc)
 		return rc;

@@ -344,6 +344,9 @@ static void __noreturn init_coldboot(struct sbi_scratch *scratch, u32 hartid)
 	(*init_count)++;
 
 	sbi_hsm_prepare_next_jump(scratch, hartid);
+
+	// TODO: don't jump if V extension if enabled, just wait on queue
+
 	sbi_hart_switch_mode(hartid, scratch->next_arg1, scratch->next_addr,
 			     scratch->next_mode, FALSE);
 }
@@ -434,6 +437,8 @@ static void __noreturn init_warmboot(struct sbi_scratch *scratch, u32 hartid)
 		init_warm_resume(scratch);
 	else
 		init_warm_startup(scratch, hartid);
+
+	// TODO: don't jump if V extension if enabled, just wait on queue
 
 	sbi_hart_switch_mode(hartid, scratch->next_arg1,
 			     scratch->next_addr,

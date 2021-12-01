@@ -219,6 +219,13 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 	ulong mtval = csr_read(CSR_MTVAL), mtval2 = 0, mtinst = 0;
 	struct sbi_trap_info trap;
 
+	/*
+	 * Save trap registers in scratch tmp0 as a hack to pass regs
+	 * to an IPI handler
+	 */
+	struct sbi_scratch *scratch = sbi_scratch_thishart_ptr();
+	scratch->tmp0 = (unsigned long)regs;
+
 	if (misa_extension('H')) {
 		mtval2 = csr_read(CSR_MTVAL2);
 		mtinst = csr_read(CSR_MTINST);
@@ -238,6 +245,11 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 			goto trap_error;
 		};
 		return regs;
+	}
+
+	/* If this is the accelerator hart, any exception is */
+	if (misa_extension('V')) {
+		
 	}
 
 	switch (mcause) {

@@ -30,6 +30,15 @@ struct sbi_ipi_device {
 	void (*ipi_clear)(u32 target_hart);
 };
 
+/* A migrated task's context */
+struct task_context {
+	unsigned long satp;
+	unsigned long pid;
+	void *kernel_regs;
+	unsigned long origin_hart;
+	unsigned long regs[31];
+};
+
 struct sbi_scratch;
 
 /** IPI event operations or callbacks */
@@ -72,6 +81,8 @@ int sbi_ipi_send_smode(ulong hmask, ulong hbase);
 void sbi_ipi_clear_smode(void);
 
 int sbi_ipi_send_halt(ulong hmask, ulong hbase);
+
+int sbi_ipi_dispatch_task(struct sbi_scratch *, void *data);
 
 void sbi_ipi_process(void);
 
