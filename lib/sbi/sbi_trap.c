@@ -20,6 +20,7 @@
 #include <sbi/sbi_scratch.h>
 #include <sbi/sbi_timer.h>
 #include <sbi/sbi_trap.h>
+#include <sbi/sbi_string.h>
 
 static void __noreturn sbi_trap_error(const char *msg, int rc,
 				      ulong mcause, ulong mtval, ulong mtval2,
@@ -218,7 +219,9 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 	ulong mcause = csr_read(CSR_MCAUSE);
 	ulong mtval = csr_read(CSR_MTVAL), mtval2 = 0, mtinst = 0;
 	struct sbi_trap_info trap;
-	struct task_context user_ctxt;
+	struct task_context ctxt;
+	ulong prev_mode = (regs->mstatus & MSTATUS_MPP) >> MSTATUS_MPP_SHIFT;
+	unsigned long mstatus;
 
 	/*
 	 * Save trap registers in scratch tmp0 as a hack to pass regs
@@ -226,6 +229,7 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 	 */
 	struct sbi_scratch *scratch = sbi_scratch_thishart_ptr();
 	scratch->tmp0 = (unsigned long)regs;
+	struct task_data *tdata = sbi_scratch_offset_ptr(scratch, task_data_off);
 
 	if (misa_extension('H')) {
 		mtval2 = csr_read(CSR_MTVAL2);
@@ -250,10 +254,32 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 
 	/*
 	 * If this is the accelerator hart, any exception triggers
-	 * a migration back to the linux hart.
+	 * a migration back to the linux hart. Extract the execution
+	 * state and trigger an IPI to the originating hart.
 	 */
-	if (misa_extension('V')) {
-		sbi_ipi_send_restart(scratch, ctxt);
+	if (misa_extension('V') && prev_mode == PRV_U) {
+		sbi_memcpy(&ctxt.regs, &regs->ra, 31 * 8);
+		ctxt.epc = regs->mepc;
+		ctxt.satp = csr_read(CSR_SATP);
+		ctxt.pid = tdata->pid;
+		ctxt.kernel_regs = tdata->kernel_regs;
+		ctxt.origin_hart = tdata->origin_hart;
+		csr_write(CSR_SATP, 0);
+		tdata->pid = 0;
+		tdata->kernel_regs = (void *)0;
+		tdata->origin_hart = -1UL;
+		sbi_ipi_send_restart(scratch, &ctxt);
+
+		/* 
+		 * Hackish way to wait for next interrupt, may instantly jump
+		 * back to trap handler if another IPI is pending.
+		 */
+		mstatus = regs->mstatus;
+		mstatus = INSERT_FIELD(mstatus, MSTATUS_MPP, PRV_M);
+		mstatus = INSERT_FIELD(mstatus, MSTATUS_MPIE, 1);
+		regs->mstatus = mstatus;
+		regs->mepc = (unsigned long)&sbi_hart_hang;
+		regs->sp = csr_read(CSR_MSCRATCH);
 		return regs;
 	}
 

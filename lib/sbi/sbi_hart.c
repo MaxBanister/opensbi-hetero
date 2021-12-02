@@ -513,10 +513,12 @@ int sbi_hart_reinit(struct sbi_scratch *scratch)
 	if (rc)
 		return rc;
 
-	// TODO: don't delegate if V extension is enabled
-	rc = delegate_traps(scratch);
-	if (rc)
-		return rc;
+	/* All traps on the accelerator go to OpenSBI */
+	if (!misa_extension('V')) {
+		rc = delegate_traps(scratch);
+		if (rc)
+			return rc;
+	}
 
 	return 0;
 }
@@ -615,9 +617,8 @@ sbi_hart_switch_mode(unsigned long arg0, unsigned long arg1,
 
 
 void __attribute__((noreturn)) sbi_hart_wait_for_task(void) {
-	val = csr_read(CSR_MSTATUS);
-	val = INSERT_FIELD(val, MSTATUS_MPP, next_mode);
-	val = INSERT_FIELD(val, MSTATUS_MPIE, 0);
+	unsigned long val = csr_read(CSR_MSTATUS);
+	val = INSERT_FIELD(val, MSTATUS_MPP, PRV_M);
 	/* Jump to mtvec upon receiving an IPI now. */
 	val = INSERT_FIELD(val, MSTATUS_MIE, 1);
 	csr_write(CSR_MSTATUS, val);

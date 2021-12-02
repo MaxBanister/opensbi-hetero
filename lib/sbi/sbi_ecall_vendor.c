@@ -14,6 +14,7 @@
 #include <sbi/sbi_platform.h>
 #include <sbi/sbi_trap.h>
 #include <sbi/sbi_ipi.h>
+#include <sbi/sbi_unpriv.h>
 
 extern unsigned long accelerator_hart;
 
@@ -53,7 +54,7 @@ static int sbi_ecall_vendor_handler(unsigned long extid, unsigned long funcid,
 		/* Previous privilege mode's address space should be rooted at satp */
 		for (int i = 1; i < 32; i++) {
 			ctxt.regs[i-1] = sbi_load_u64(&kernel_regs[i], out_trap);
-			if (out_trap.cause)
+			if (out_trap->cause)
 				return -SBI_ETRAP;
 		}
 

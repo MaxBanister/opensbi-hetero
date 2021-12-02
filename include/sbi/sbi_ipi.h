@@ -40,6 +40,18 @@ struct task_context {
 	unsigned long regs[31];
 };
 
+/*
+ * All the data that can't be extracted from the execution state
+ * when the task is to be sent back to linux.
+ */
+struct task_data {
+	unsigned long pid;
+	void *kernel_regs;
+	unsigned long origin_hart;
+};
+
+extern unsigned long task_data_off;
+
 struct sbi_scratch;
 
 /** IPI event operations or callbacks */
@@ -83,9 +95,10 @@ void sbi_ipi_clear_smode(void);
 
 int sbi_ipi_send_halt(ulong hmask, ulong hbase);
 
-int sbi_ipi_run_task(struct sbi_scratch *, void *data);
+int sbi_ipi_send_run_task(struct sbi_scratch *, void *data);
 
-int sbi_ipi_restart_task(struct sbi_scratch *, void *data);
+int sbi_ipi_send_restart(struct sbi_scratch *scratch,
+								 struct task_context *ctxt);
 
 void sbi_ipi_process(void);
 
