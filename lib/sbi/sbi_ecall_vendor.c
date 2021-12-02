@@ -46,13 +46,12 @@ static int sbi_ecall_vendor_handler(unsigned long extid, unsigned long funcid,
 		     * arg1 is pid
 		     * arg2 is a pointer to pt_regs
 			 */
-		sbi_printf("outbound migration ecall received\n");
 
 		ctxt.satp = regs->a0;
 		ctxt.pid = regs->a1;
 		ctxt.origin_hart = current_hartid();
 		kernel_regs = (unsigned long *)regs->a2;
-		sbi_printf("satp at ecall: 0x%lx\n", ctxt.satp);
+		ctxt.kernel_regs = kernel_regs;
 
 		/* Previous privilege mode's address space should be rooted at satp */
 		for (int i = 1; i < 32; i++) {
@@ -64,12 +63,8 @@ static int sbi_ecall_vendor_handler(unsigned long extid, unsigned long funcid,
 		if (out_trap->cause)
 			return SBI_ETRAP;
 
-		sbi_printf("sbi ecall: regs copied from kernel stack! sp = 0x%lx\n", ctxt.regs[1]);
-
 		sbi_ipi_send_run_task(sbi_scratch_thishart_ptr(), &ctxt);
-
-		sbi_printf("sbi ecall: returned from ecall\n");
-
+		
 		break;
 	default:
 		break;

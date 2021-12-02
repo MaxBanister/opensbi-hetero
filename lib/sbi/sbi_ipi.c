@@ -196,7 +196,6 @@ static int task_run_update(struct sbi_scratch *scratch,
 			  u32 remote_hartid, void *data) {
 
 	struct sbi_fifo *rfifo = sbi_scratch_offset_ptr(remote_scratch, task_fifo_off);
-	sbi_printf("inside task run update\n");
 	return sbi_fifo_enqueue(rfifo, data);
 }
 
@@ -217,8 +216,6 @@ static void task_run_process(struct sbi_scratch *scratch) {
 	regs->zero = 0;
 	sbi_memcpy(&regs->ra, &ctxt.regs, 31 * 8);
 	regs->mepc = ctxt.epc;
-	sbi_printf("inside task run process, regs->sp = 0x%lx\n", regs->sp);
-	sbi_printf("satp at process ipi: 0x%lx\n", ctxt.satp);
 
 	next_mstatus = regs->mstatus;
 	next_mstatus = INSERT_FIELD(next_mstatus, MSTATUS_MPP, PRV_U);
@@ -292,7 +289,7 @@ static void task_restart_process(struct sbi_scratch *scratch) {
 		if (store_trap.cause)
 			goto trap_exit;
 	}
-	sbi_store_u64((u64 *)&ctxt.kernel_regs, ctxt.epc, &store_trap);
+	sbi_store_u64((u64 *)ctxt.kernel_regs, ctxt.epc, &store_trap);
 	if (store_trap.cause)
 		goto trap_exit;
 
@@ -300,19 +297,18 @@ static void task_restart_process(struct sbi_scratch *scratch) {
 	__asm__ __volatile__("sfence.vma" : : : "memory");
 
 	ret_trap.epc = regs->mepc;
-	ret_trap.cause = 16;
+	ret_trap.cause = (1ULL << (__riscv_xlen - 1)) | 16;
 	ret_trap.tval = ctxt.pid;
 	/* We can implement H extension support later */
 	ret_trap.tval2 = 0;
 	ret_trap.tinst = 0;
 	ret = sbi_trap_redirect(regs, &ret_trap);
-	if (ret) {
+	if (ret)
 		sbi_printf("error: trap redirect failed\n");
-		return;
-	}
+	return;
 
 trap_exit:
-	sbi_printf("error: writing to kernel's address space failed\n");
+	sbi_printf("error: writing to kernel's address space failed, cause=%lu\n", store_trap.cause);
 	csr_write(CSR_SATP, old_satp);
 	return;
 }
@@ -408,6 +404,23 @@ int sbi_ipi_init(struct sbi_scratch *scratch, bool cold_boot)
 		if (ret < 0)
 			return ret;
 		ipi_restart_event = ret;
+
+		/*
+		* Allocate fifos for accelerator communication
+		* used both for ingress and egress.
+		*/
+		task_fifo_off = sbi_scratch_alloc_offset(sizeof(struct sbi_fifo));
+		if (!task_fifo_off)
+			return SBI_ENOMEM;
+
+		task_fifo_mem_off = sbi_scratch_alloc_offset(sizeof(struct task_context) * 5);
+		if (!task_fifo_mem_off)
+			return SBI_ENOMEM;
+
+		/* Accelerator running task state */
+		task_data_off = sbi_scratch_alloc_offset(sizeof(struct task_data));
+		if (!task_data_off)
+			return SBI_ENOMEM;
 	} else {
 		if (!ipi_data_off)
 			return SBI_ENOMEM;
@@ -415,6 +428,10 @@ int sbi_ipi_init(struct sbi_scratch *scratch, bool cold_boot)
 		    SBI_IPI_EVENT_MAX <= ipi_halt_event)
 			return SBI_ENOSPC;
 	}
+
+	task_fifo = sbi_scratch_offset_ptr(scratch, task_fifo_off);
+	task_fifo_mem = sbi_scratch_offset_ptr(scratch, task_fifo_mem_off);
+	sbi_fifo_init(task_fifo, task_fifo_mem, 5, sizeof(struct task_context));
 
 	ipi_data = sbi_scratch_offset_ptr(scratch, ipi_data_off);
 	ipi_data->ipi_type = 0x00;
@@ -426,27 +443,6 @@ int sbi_ipi_init(struct sbi_scratch *scratch, bool cold_boot)
 	ret = sbi_platform_ipi_init(sbi_platform_ptr(scratch), cold_boot);
 	if (ret)
 		return ret;
-
-	/*
-	 * Allocate fifos for accelerator communication
-	 * used both for ingress and egress.
-	 */
-	task_fifo_off = sbi_scratch_alloc_offset(sizeof(struct sbi_fifo));
-	if (!task_fifo_off)
-		return SBI_ENOMEM;
-	task_fifo = sbi_scratch_offset_ptr(scratch, task_fifo_off);
-
-	task_fifo_mem_off = sbi_scratch_alloc_offset(sizeof(struct task_context) * 5);
-	if (!task_fifo_mem_off)
-		return SBI_ENOMEM;
-	task_fifo_mem = sbi_scratch_offset_ptr(scratch, task_fifo_mem_off);
-
-	sbi_fifo_init(task_fifo, task_fifo_mem, 5, sizeof(struct task_context));
-
-	/* Accelerator running task state */
-	task_data_off = sbi_scratch_alloc_offset(sizeof(struct task_data));
-	if (!task_data_off)
-		return SBI_ENOMEM;
 
 	if (misa_extension('V'))
 		accelerator_hart = current_hartid();

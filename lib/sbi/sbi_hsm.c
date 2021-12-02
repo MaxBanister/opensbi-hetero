@@ -260,7 +260,6 @@ int sbi_hsm_hart_start(struct sbi_scratch *scratch,
 	unsigned int hstate;
 	struct sbi_scratch *rscratch;
 	struct sbi_hsm_data *hdata;
-	sbi_printf("sbi_hsm_hart_start for hart %d\n", hartid);
 
 	/* For now, we only allow start mode to be S-mode or U-mode. */
 	if (smode != PRV_S && smode != PRV_U)
