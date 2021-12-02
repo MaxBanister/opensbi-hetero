@@ -186,7 +186,7 @@ int sbi_ipi_send_halt(ulong hmask, ulong hbase)
  * Define ipi ops for linux -> accelerator communication:
  * update: put satp, pid, and regs in fifo queue
  */
-static int task_dispatch_update(struct sbi_scratch *scratch,
+static int task_run_update(struct sbi_scratch *scratch,
 			  struct sbi_scratch *remote_scratch,
 			  u32 remote_hartid, void *data) {
 
@@ -194,20 +194,28 @@ static int task_dispatch_update(struct sbi_scratch *scratch,
 	return sbi_fifo_enqueue(rfifo, data);
 }
 
-static struct sbi_ipi_event_ops ipi_dispatch_task_ops = {
-	.name = "IPI_DISPATCH_TASK",
-	.update = task_dispatch_update
+static int task_run_process(struct sbi_scratch *scratch) {
+
+	sbi_fifo rfifo = sbi_scratch_offset_ptr(remote_scratch, task_fifo_off);
+	struct sbi_trap_regs *regs = (struct sbi_trap_regs *)scratch->tmp0;
+	return sbi_fifo_enqueue(rfifo, data);
+}
+
+static struct sbi_ipi_event_ops ipi_run_task_ops = {
+	.name = "IPI_RUN_TASK",
+	.update = task_run_update,
+	.process = task_run_process
 };
 
-static u32 ipi_dispatch_task_event = SBI_IPI_EVENT_MAX;
+static u32 ipi_run_task_event = SBI_IPI_EVENT_MAX;
 
-int sbi_ipi_send_dispatch_task(struct sbi_scratch *scratch, void *data)
+int sbi_ipi_send_run_task(struct sbi_scratch *scratch, void *data)
 {
 	if (accelerator_hart < 0) {
 		sbi_printf("error: no accelerator hart found\n");
 		return -SBI_ENOTSUPP;
 	}
-	return sbi_ipi_send(scratch, accelerator_hart, ipi_dispatch_task_event, data);
+	return sbi_ipi_send(scratch, accelerator_hart, ipi_run_task_event, data);
 }
 
 /*
@@ -224,46 +232,51 @@ static int task_restart_update(struct sbi_scratch *scratch,
 }
 
 static int task_restart_process(struct sbi_scratch *scratch) {
-		struct sbi_trap_info store_trap, ret_trap;
-		struct sbi_fifo *fifo = sbi_scratch_offset_ptr(scratch, task_fifo_off);
-		struct task_context ctxt;
-		unsigned long old_satp;
-		struct sbi_trap_regs *regs = (struct sbi_trap_regs *)scratch->tmp0;
+	struct sbi_trap_info store_trap, ret_trap;
+	struct sbi_fifo *fifo = sbi_scratch_offset_ptr(scratch, task_fifo_off);
+	struct task_context ctxt;
+	unsigned long old_satp;
+	struct sbi_trap_regs *regs = (struct sbi_trap_regs *)scratch->tmp0;
 
-		int ret = sbi_fifo_dequeue(fifo, &ctxt);
-		if (ret < 0)
-			return ret;
+	int ret = sbi_fifo_dequeue(fifo, &ctxt);
+	if (ret < 0)
+		return ret;
 
-		/*
-		 * We must access the process's address space to store our updated regs,
-		 * so we must swap out the satp temporarily, before putting it back.
-		 */
-		old_satp = csr_read(CSR_SATP);
-		csr_write(CSR_SATP, ctxt.satp);
+	/*
+	 * We must access the process's address space to store our updated regs,
+	 * so we must swap out the satp temporarily, before putting it back.
+	 */
+	old_satp = csr_read(CSR_SATP);
+	csr_write(CSR_SATP, ctxt.satp);
 
-		/* May not be necessary */
-		tlb_flush_all();
+	/* May not be necessary */
+	tlb_flush_all();
 
-		/* Copy updated regs to kernel stack */
-		for (int i = 1; i < 32; i++) {
-			sbi_store_u64((u64 *)ctxt.kernel_regs + i, ctxt.regs[i-1], &store_trap);
-			if (store_trap.cause) {
-				sbi_printf("error: writing to kernel's address space failed\n");
-				csr_write(CSR_SATP, old_satp);
-				return store_trap.cause;
-			}
-		}
+	/* Copy updated regs to kernel stack */
+	for (int i = 1; i < 32; i++) {
+		sbi_store_u64((u64 *)ctxt.kernel_regs + i, ctxt.regs[i-1], &store_trap);
+		if (store_trap.cause)
+			goto trap_exit;
+	}
+	sbi_store_u64((u64 *)ctxt.kernel_regs[0], ctxt.epc, &store_trap);
+	if (store_trap.cause)
+		goto trap_exit;
 
-		csr_write(CSR_SATP, old_satp);
-		tlb_flush_all();
+	csr_write(CSR_SATP, old_satp);
+	tlb_flush_all();
 
-		ret_trap.epc = regs->mepc;
-		ret_trap.cause = 16;
-		ret_trap.tval = ctxt.pid;
-		/* We can implement H extension support later */
-		ret_trap.tval2 = 0;
-		ret_trap.tinst = 0;
-		sbi_trap_redirect(regs, &trap);
+	ret_trap.epc = regs->mepc;
+	ret_trap.cause = 16;
+	ret_trap.tval = ctxt.pid;
+	/* We can implement H extension support later */
+	ret_trap.tval2 = 0;
+	ret_trap.tinst = 0;
+	return sbi_trap_redirect(regs, &trap);
+
+trap_exit:
+	sbi_printf("error: writing to kernel's address space failed\n");
+	csr_write(CSR_SATP, old_satp);
+	return store_trap.cause;
 }
 
 static struct sbi_ipi_event_ops ipi_restart_ops = {

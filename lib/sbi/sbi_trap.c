@@ -218,6 +218,7 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 	ulong mcause = csr_read(CSR_MCAUSE);
 	ulong mtval = csr_read(CSR_MTVAL), mtval2 = 0, mtinst = 0;
 	struct sbi_trap_info trap;
+	struct task_context user_ctxt;
 
 	/*
 	 * Save trap registers in scratch tmp0 as a hack to pass regs
@@ -247,9 +248,13 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 		return regs;
 	}
 
-	/* If this is the accelerator hart, any exception is */
+	/*
+	 * If this is the accelerator hart, any exception triggers
+	 * a migration back to the linux hart.
+	 */
 	if (misa_extension('V')) {
-		
+		sbi_ipi_send_restart(scratch, ctxt);
+		return regs;
 	}
 
 	switch (mcause) {

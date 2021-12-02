@@ -36,6 +36,7 @@ static int sbi_ecall_vendor_handler(unsigned long extid, unsigned long funcid,
 	*/
 
 	struct task_context ctxt;
+	unsigned long *kernel_regs;
 
 	switch (funcid) {
 	case 0: /* outbound migration
@@ -46,15 +47,17 @@ static int sbi_ecall_vendor_handler(unsigned long extid, unsigned long funcid,
 		ctxt.satp = regs->a0;
 		ctxt.pid = regs->a1;
 		ctxt.origin_hart = current_hartid();
+		ctxt.epc = regs->mepc;
+		kernel_regs = (unsigned long *)regs->a2;
 
 		/* Previous privilege mode's address space should be rooted at satp */
 		for (int i = 1; i < 32; i++) {
-			sbi_load_u64(&ctxt.regs[i-1], out_trap);
+			ctxt.regs[i-1] = sbi_load_u64(&kernel_regs[i], out_trap);
 			if (out_trap.cause)
 				return -SBI_ETRAP;
 		}
 
-		sbi_ipi_send_dispatch_task(sbi_scratch_thishart_ptr(), &ctxt);
+		sbi_ipi_send_run_task(sbi_scratch_thishart_ptr(), &ctxt);
 
 		break;
 	default:

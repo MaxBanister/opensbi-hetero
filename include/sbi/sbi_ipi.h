@@ -36,6 +36,7 @@ struct task_context {
 	unsigned long pid;
 	void *kernel_regs;
 	unsigned long origin_hart;
+	unsigned long epc;
 	unsigned long regs[31];
 };
 
@@ -82,7 +83,9 @@ void sbi_ipi_clear_smode(void);
 
 int sbi_ipi_send_halt(ulong hmask, ulong hbase);
 
-int sbi_ipi_dispatch_task(struct sbi_scratch *, void *data);
+int sbi_ipi_run_task(struct sbi_scratch *, void *data);
+
+int sbi_ipi_restart_task(struct sbi_scratch *, void *data);
 
 void sbi_ipi_process(void);
 

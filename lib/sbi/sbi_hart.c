@@ -612,3 +612,15 @@ sbi_hart_switch_mode(unsigned long arg0, unsigned long arg1,
 	__asm__ __volatile__("mret" : : "r"(a0), "r"(a1));
 	__builtin_unreachable();
 }
+
+
+void __attribute__((noreturn)) sbi_hart_wait_for_task(void) {
+	val = csr_read(CSR_MSTATUS);
+	val = INSERT_FIELD(val, MSTATUS_MPP, next_mode);
+	val = INSERT_FIELD(val, MSTATUS_MPIE, 0);
+	/* Jump to mtvec upon receiving an IPI now. */
+	val = INSERT_FIELD(val, MSTATUS_MIE, 1);
+	csr_write(CSR_MSTATUS, val);
+
+	sbi_hart_hang();
+}
