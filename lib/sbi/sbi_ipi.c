@@ -196,6 +196,7 @@ static int task_run_update(struct sbi_scratch *scratch,
 			  u32 remote_hartid, void *data) {
 
 	struct sbi_fifo *rfifo = sbi_scratch_offset_ptr(remote_scratch, task_fifo_off);
+	sbi_printf("inside task run update\n");
 	return sbi_fifo_enqueue(rfifo, data);
 }
 
@@ -216,6 +217,8 @@ static void task_run_process(struct sbi_scratch *scratch) {
 	regs->zero = 0;
 	sbi_memcpy(&regs->ra, &ctxt.regs, 31 * 8);
 	regs->mepc = ctxt.epc;
+	sbi_printf("inside task run process, regs->sp = 0x%lx\n", regs->sp);
+	sbi_printf("satp at process ipi: 0x%lx\n", ctxt.satp);
 
 	next_mstatus = regs->mstatus;
 	next_mstatus = INSERT_FIELD(next_mstatus, MSTATUS_MPP, PRV_U);
@@ -223,6 +226,7 @@ static void task_run_process(struct sbi_scratch *scratch) {
 	regs->mstatus = next_mstatus;
 
 	csr_write(CSR_SATP, ctxt.satp);
+	__asm__ __volatile__("sfence.vma" : : : "memory");
 
 	tdata->pid = ctxt.pid;
 	tdata->kernel_regs = ctxt.kernel_regs;

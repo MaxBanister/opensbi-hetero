@@ -180,7 +180,7 @@ static int hsm_device_hart_suspend(u32 suspend_type, ulong raddr)
 
 int sbi_hsm_init(struct sbi_scratch *scratch, u32 hartid, bool cold_boot)
 {
-	u32 i;
+	u32 i, old_state;
 	struct sbi_scratch *rscratch;
 	struct sbi_hsm_data *hdata;
 
@@ -203,7 +203,19 @@ int sbi_hsm_init(struct sbi_scratch *scratch, u32 hartid, bool cold_boot)
 				    SBI_HSM_STATE_STOPPED);
 		}
 	} else {
-		sbi_hsm_hart_wait(scratch, hartid);
+		/*
+		 * Since the accelerator has no supervisor to start it,
+		 * it puts itself in the pending state.
+		 */
+		if (misa_extension('V')) {
+			hdata = sbi_scratch_offset_ptr(scratch, hart_data_offset);
+			old_state = atomic_cmpxchg(&hdata->state, SBI_HSM_STATE_STOPPED,
+				SBI_HSM_STATE_START_PENDING);
+			if (old_state != SBI_HSM_STATE_STOPPED)
+				return SBI_EFAIL;
+		} else {
+			sbi_hsm_hart_wait(scratch, hartid);
+		}
 	}
 
 	return 0;
@@ -248,6 +260,7 @@ int sbi_hsm_hart_start(struct sbi_scratch *scratch,
 	unsigned int hstate;
 	struct sbi_scratch *rscratch;
 	struct sbi_hsm_data *hdata;
+	sbi_printf("sbi_hsm_hart_start for hart %d\n", hartid);
 
 	/* For now, we only allow start mode to be S-mode or U-mode. */
 	if (smode != PRV_S && smode != PRV_U)

@@ -264,6 +264,7 @@ struct sbi_trap_regs *sbi_trap_handler(struct sbi_trap_regs *regs)
 		ctxt.pid = tdata->pid;
 		ctxt.kernel_regs = tdata->kernel_regs;
 		ctxt.origin_hart = tdata->origin_hart;
+		sbi_printf("trap encountered on hart %d, mtval = %lx, mstatus = %lx, epc=0x%lx\n", current_hartid(), mtval, regs->mstatus, ctxt.epc);
 		csr_write(CSR_SATP, 0);
 		tdata->pid = 0;
 		tdata->kernel_regs = (void *)0;

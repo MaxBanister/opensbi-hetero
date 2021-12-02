@@ -46,10 +46,14 @@ static void mstatus_init(struct sbi_scratch *scratch)
 		mstatus_val |=  MSTATUS_FS;
 
 	/* Enable Vector context */
-	if (misa_extension('V'))
+	if (misa_extension('V')) {
+		sbi_printf("hart %d has V extension\n", current_hartid());
 		mstatus_val |=  MSTATUS_VS;
+	}
 
 	csr_write(CSR_MSTATUS, mstatus_val);
+
+	sbi_printf("mstatus_init called on hartid %d, mstatus: %lx, mstatus_vs: %lx, mstatus_val: %lx\n", current_hartid(), csr_read(CSR_MSTATUS), MSTATUS_VS, mstatus_val);
 
 	/* Disable user mode usage of all perf counters except default ones (CY, TM, IR) */
 	if (misa_extension('S') &&

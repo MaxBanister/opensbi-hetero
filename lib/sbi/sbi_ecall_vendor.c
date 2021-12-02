@@ -15,6 +15,7 @@
 #include <sbi/sbi_trap.h>
 #include <sbi/sbi_ipi.h>
 #include <sbi/sbi_unpriv.h>
+#include <sbi/sbi_console.h>
 
 extern unsigned long accelerator_hart;
 
@@ -45,20 +46,29 @@ static int sbi_ecall_vendor_handler(unsigned long extid, unsigned long funcid,
 		     * arg1 is pid
 		     * arg2 is a pointer to pt_regs
 			 */
+		sbi_printf("outbound migration ecall received\n");
+
 		ctxt.satp = regs->a0;
 		ctxt.pid = regs->a1;
 		ctxt.origin_hart = current_hartid();
-		ctxt.epc = regs->mepc;
 		kernel_regs = (unsigned long *)regs->a2;
+		sbi_printf("satp at ecall: 0x%lx\n", ctxt.satp);
 
 		/* Previous privilege mode's address space should be rooted at satp */
 		for (int i = 1; i < 32; i++) {
 			ctxt.regs[i-1] = sbi_load_u64(&kernel_regs[i], out_trap);
 			if (out_trap->cause)
-				return -SBI_ETRAP;
+				return SBI_ETRAP;
 		}
+		ctxt.epc = sbi_load_u64(&kernel_regs[0], out_trap);
+		if (out_trap->cause)
+			return SBI_ETRAP;
+
+		sbi_printf("sbi ecall: regs copied from kernel stack! sp = 0x%lx\n", ctxt.regs[1]);
 
 		sbi_ipi_send_run_task(sbi_scratch_thishart_ptr(), &ctxt);
+
+		sbi_printf("sbi ecall: returned from ecall\n");
 
 		break;
 	default:
